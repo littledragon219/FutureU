@@ -1,17 +1,41 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Upload, FileText, CheckCircle, Loader2 } from 'lucide-react'
+import { Upload, FileText, CheckCircle, Loader2, AlertCircle } from 'lucide-react'
+import { useUserStore } from "@/store/user-store"
+import { getSupabaseClient } from "@/lib/supabase/client"
 
 export default function UploadPage() {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'compiling' | 'completed'>('idle')
   const [progress, setProgress] = useState(0)
   const [dragActive, setDragActive] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadedResumeUrl, setUploadedResumeUrl] = useState<string | null>(null)
   const router = useRouter()
+  const { user, login } = useUserStore()
+  const supabase = getSupabaseClient()
+  
+  useEffect(() => {
+    // 检查用户会话
+    const checkUserSession = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error || !session) {
+        router.replace("/") // 未登录则重定向到登录页
+        return
+      }
+      
+      // 如果已经有上传的简历，显示URL
+      if (user?.resumeUrl) {
+        setUploadedResumeUrl(user.resumeUrl)
+      }
+    }
+    
+    checkUserSession()
+  }, [router, supabase, user])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -39,35 +63,79 @@ export default function UploadPage() {
     }
   }
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
+    setUploadError(null)
     if (file.type === 'application/pdf' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      simulateUploadAndCompile()
+      if (!user?.id) {
+        setUploadError("用户未登录，无法上传文件。")
+        return
+      }
+      await uploadToSupabase(file)
     } else {
-      alert('请上传 PDF 或 Word 格式的文件')
+      setUploadError('请上传 PDF 或 Word 格式的文件')
     }
   }
 
-  const simulateUploadAndCompile = () => {
+  const uploadToSupabase = async (file: File) => {
     setUploadStatus('uploading')
     setProgress(0)
+    
+    const fileExt = file.name.split('.').pop()
+    const filePath = `${user!.id}/${Date.now()}.${fileExt}` // 存储路径：用户ID/时间戳.扩展名
 
-    // Simulate upload progress
-    const uploadInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(uploadInterval)
-          setUploadStatus('compiling')
-          
-          // Simulate compilation
-          setTimeout(() => {
-            setUploadStatus('completed')
-          }, 3000)
-          
-          return 100
-        }
-        return prev + 10
-      })
-    }, 200)
+    try {
+      // 模拟上传进度
+      let currentProgress = 0
+      const interval = setInterval(() => {
+        currentProgress += 10
+        setProgress(Math.min(currentProgress, 90)) // 模拟到90%
+        if (currentProgress >= 90) clearInterval(interval)
+      }, 100)
+
+      const { data, error: uploadError } = await supabase.storage
+        .from('resumes')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false, // 不覆盖同名文件
+        })
+
+      clearInterval(interval) // 清除模拟进度
+
+      if (uploadError) throw uploadError
+
+      // 获取公开 URL
+      const { data: publicUrlData } = supabase.storage
+        .from('resumes')
+        .getPublicUrl(filePath)
+
+      if (!publicUrlData || !publicUrlData.publicUrl) {
+        throw new Error("无法获取文件公开链接。")
+      }
+
+      // 将公开链接写入用户 profiles 表
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ resume_url: publicUrlData.publicUrl })
+        .eq('id', user!.id)
+
+      if (updateError) throw updateError
+
+      setUploadedResumeUrl(publicUrlData.publicUrl)
+      login({ ...user!, resumeUrl: publicUrlData.publicUrl }) // 更新 Zustand 状态
+      setProgress(100) // 完成进度
+      setUploadStatus('compiling')
+      
+      // 模拟AI分析过程
+      setTimeout(() => {
+        setUploadStatus('completed')
+      }, 3000)
+      
+    } catch (err: any) {
+      console.error("简历上传失败:", err)
+      setUploadError(err.message || "简历上传失败，请重试。")
+      setProgress(0) // 重置进度
+      setUploadStatus('idle')
+    }
   }
 
   const getStatusText = () => {
@@ -181,6 +249,28 @@ export default function UploadPage() {
               {getStatusIcon()}
               <span className="text-lg font-medium text-gray-700">
                 {getStatusText()}
+              </span>
+            </div>
+          </div>
+        )}
+        
+        {/* Error Message */}
+        {uploadError && (
+          <div className="mb-8 p-4 bg-red-50 rounded-lg border border-red-200">
+            <div className="flex items-center gap-2 text-red-700">
+              <AlertCircle className="h-5 w-5" />
+              <span className="font-medium">{uploadError}</span>
+            </div>
+          </div>
+        )}
+        
+        {/* Success Message */}
+        {uploadedResumeUrl && uploadStatus === 'idle' && !uploadError && (
+          <div className="mb-8 p-4 bg-green-50 rounded-lg border border-green-200">
+            <div className="flex items-center gap-2 text-green-700">
+              <CheckCircle className="h-5 w-5" />
+              <span className="font-medium">简历已上传：
+                <a href={uploadedResumeUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-green-800">查看文件</a>
               </span>
             </div>
           </div>

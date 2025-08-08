@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useUserStore } from "@/store/user-store"
 import { Loader2, LogIn, Mail, UserRound, GraduationCap, TargetIcon, BadgeCheck } from 'lucide-react'
-import { getSupabaseClient } from "@/lib/supabase/client" // 导入 Supabase 客户端
+import { getSupabaseClient, getCurrentUserId } from "@/lib/supabase/client" // 导入 Supabase 客户端
+import { profileService } from "@/lib/supabase/services"
 
 export default function Page() {
   const router = useRouter()
@@ -39,25 +40,37 @@ export default function Page() {
         password,
       })
 
-      if (authError) throw authError
+      if (authError) {
+        // 检查是否是邮箱未确认的错误
+        if (authError.message === 'Email not confirmed') {
+          // 发送确认邮件
+          const { error: resendError } = await supabase.auth.resend({
+            type: 'signup',
+            email,
+          })
+          
+          if (resendError) {
+            throw resendError
+          } else {
+            throw new Error('邮箱未确认，我们已重新发送确认邮件，请查收并点击确认链接')
+          }
+        } else {
+          throw authError
+        }
+      }
 
       if (data.user) {
-        // 登录成功后，从 profiles 表获取用户详细信息
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', data.user.id)
-          .single()
-
-        if (profileError) throw profileError
-
+        // 获取用户资料
+        const profile = await profileService.getCurrentProfile()
+        if (!profile) throw new Error('无法获取用户资料')
+        
         login({
           id: data.user.id, // 存储用户ID
-          name: profileData.name,
+          name: profile.full_name,
           email: data.user.email!,
-          education: profileData.education,
-          careerGoal: profileData.career_goal,
-          resumeUrl: profileData.resume_url, // 存储简历URL
+          education: profile.education,
+          careerGoal: profile.career_goal,
+          resumeUrl: profile.resume_url, // 存储简历URL
         })
         router.push("/dashboard")
       }
@@ -76,7 +89,7 @@ export default function Page() {
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/dashboard`, // 登录成功后重定向到仪表盘
+          redirectTo: `${window.location.origin}/auth/callback`, // 更改为使用回调处理程序
         },
       })
 
@@ -95,31 +108,33 @@ export default function Page() {
     setIsLoading(true)
     setError(null)
     try {
+      // 在注册时传递用户元数据，这样触发器可以使用这些数据创建 profile 记录
       const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
-            name,
-            education,
-            career_goal: careerGoal, // 确保字段名与数据库匹配
+            full_name: name,
+            education: education,
+            career_goal: careerGoal
           },
-        },
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
       })
 
       if (authError) throw authError
 
+      // 检查是否需要邮箱确认
+      if (data.user && data.session === null) {
+        // 用户创建成功但需要邮箱确认
+        setError('注册成功！请查收邮箱并点击确认链接以完成注册。')
+        setIsLoading(false)
+        return
+      }
+
       if (data.user) {
-        // 注册成功后，将用户额外信息插入 profiles 表
-        const { error: profileError } = await supabase.from('profiles').insert({
-          id: data.user.id,
-          name,
-          education,
-          career_goal: careerGoal,
-        })
-
-        if (profileError) throw profileError
-
+        // 触发器 `handle_new_user` 会自动创建用户资料，
+        // 因此这里不再需要调用 `updateProfile`
         login({
           id: data.user.id,
           name,
@@ -137,6 +152,34 @@ export default function Page() {
       setIsLoading(false)
     }
   }
+
+  // 检查用户是否已登录，如果已登录则重定向到仪表盘
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const userId = await getCurrentUserId();
+        if (userId) {
+          const profile = await profileService.getCurrentProfile();
+          if (profile) {
+            // 用户已登录且有资料，设置用户状态并重定向
+            login({
+              id: profile.id,
+              name: profile.full_name || profile.name, // 使用 full_name 或 name
+              email: profile.email || '',
+              education: profile.education,
+              careerGoal: profile.career_goal,
+              resumeUrl: profile.resume_url,
+            });
+            router.push('/dashboard');
+          }
+        }
+      } catch (error) {
+        console.error('会话检查错误:', error);
+      }
+    };
+
+    checkSession();
+  }, [router]);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50">
@@ -195,7 +238,7 @@ export default function Page() {
             </div>
 
             {error && (
-              <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+              <div className={`mb-4 rounded-md p-3 text-sm ${error.includes('成功') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                 {error}
               </div>
             )}
