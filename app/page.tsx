@@ -9,11 +9,16 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useUserStore } from "@/store/user-store"
 import { Loader2, LogIn, Mail, UserRound, GraduationCap, TargetIcon, BadgeCheck } from 'lucide-react'
+import { getSupabaseClient } from "@/lib/supabase/client" // 导入 Supabase 客户端
 
 export default function Page() {
   const router = useRouter()
-  const { login, register, loading, setLoading } = useUserStore()
+  const { login, setLoading } = useUserStore() // 移除 register，因为 Supabase 直接处理
   const [mode, setMode] = useState<"login" | "register">("login")
+  const [loading, setIsLoading] = useState(false) // 独立管理加载状态
+  const [error, setError] = useState<string | null>(null) // 错误信息
+
+  const supabase = getSupabaseClient() // 获取 Supabase 客户端实例
 
   // 登录表单
   const [email, setEmail] = useState("")
@@ -21,53 +26,115 @@ export default function Page() {
 
   // 注册表单
   const [name, setName] = useState("")
-  const [edu, setEdu] = useState("")
-  const [goal, setGoal] = useState("")
+  const [education, setEducation] = useState("") // 更改变量名以匹配 Supabase 字段
+  const [careerGoal, setCareerGoal] = useState("") // 更改变量名以匹配 Supabase 字段
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true)
+    setIsLoading(true)
+    setError(null)
     try {
-      // 模拟登录成功
-      await new Promise((r) => setTimeout(r, 800))
-      login({
-        name: "未来同学",
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
-        education: "未填写",
-        careerGoal: "成为 AI 产品经理",
+        password,
       })
-      router.push("/dashboard")
+
+      if (authError) throw authError
+
+      if (data.user) {
+        // 登录成功后，从 profiles 表获取用户详细信息
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .single()
+
+        if (profileError) throw profileError
+
+        login({
+          id: data.user.id, // 存储用户ID
+          name: profileData.name,
+          email: data.user.email!,
+          education: profileData.education,
+          careerGoal: profileData.career_goal,
+          resumeUrl: profileData.resume_url, // 存储简历URL
+        })
+        router.push("/dashboard")
+      }
+    } catch (err: any) {
+      console.error("登录失败:", err)
+      setError(err.message || "登录失败，请检查邮箱和密码。")
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
-  async function handleGoogle() {
-    setLoading(true)
+  async function handleGoogleLogin() {
+    setIsLoading(true)
+    setError(null)
     try {
-      await new Promise((r) => setTimeout(r, 800))
-      login({
-        name: "Google 用户",
-        email: "google_user@example.com",
-        education: "商科",
-        careerGoal: "转型为 AI 产品经理",
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`, // 登录成功后重定向到仪表盘
+        },
       })
-      router.push("/dashboard")
+
+      if (authError) throw authError
+      // Google 登录会重定向，所以这里不需要手动 push
+    } catch (err: any) {
+      console.error("Google 登录失败:", err)
+      setError(err.message || "Google 登录失败。")
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
-    if (!name || !email || !edu) return
-    setLoading(true)
+    setIsLoading(true)
+    setError(null)
     try {
-      await new Promise((r) => setTimeout(r, 1000))
-      register({ name, email, education: edu, careerGoal: goal })
-      router.push("/dashboard")
+      const { data, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            education,
+            career_goal: careerGoal, // 确保字段名与数据库匹配
+          },
+        },
+      })
+
+      if (authError) throw authError
+
+      if (data.user) {
+        // 注册成功后，将用户额外信息插入 profiles 表
+        const { error: profileError } = await supabase.from('profiles').insert({
+          id: data.user.id,
+          name,
+          education,
+          career_goal: careerGoal,
+        })
+
+        if (profileError) throw profileError
+
+        login({
+          id: data.user.id,
+          name,
+          email: data.user.email!,
+          education,
+          careerGoal,
+          resumeUrl: null, // 新注册用户没有简历
+        })
+        router.push("/dashboard")
+      }
+    } catch (err: any) {
+      console.error("注册失败:", err)
+      setError(err.message || "注册失败，请重试。")
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
@@ -110,7 +177,7 @@ export default function Page() {
           <CardContent className="p-6">
             <div className="mb-6 flex gap-2 rounded-lg bg-gray-100 p-1">
               <button
-                onClick={() => setMode("login")}
+                onClick={() => { setMode("login"); setError(null) }}
                 className={`flex-1 rounded-md py-2 text-sm font-medium transition ${
                   mode === "login" ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-900"
                 }`}
@@ -118,7 +185,7 @@ export default function Page() {
                 登录
               </button>
               <button
-                onClick={() => setMode("register")}
+                onClick={() => { setMode("register"); setError(null) }}
                 className={`flex-1 rounded-md py-2 text-sm font-medium transition ${
                   mode === "register" ? "bg-white shadow text-gray-900" : "text-gray-500 hover:text-gray-900"
                 }`}
@@ -126,6 +193,12 @@ export default function Page() {
                 注册
               </button>
             </div>
+
+            {error && (
+              <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
 
             {mode === "login" ? (
               <form onSubmit={handleLogin} className="grid gap-4">
@@ -163,7 +236,7 @@ export default function Page() {
                   立即登录
                 </Button>
 
-                <Button type="button" variant="secondary" disabled={loading} onClick={handleGoogle}>
+                <Button type="button" variant="secondary" disabled={loading} onClick={handleGoogleLogin}>
                   <img
                     alt="Google"
                     src="/placeholder.svg?height=16&width=16"
@@ -208,29 +281,29 @@ export default function Page() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="edu">教育背景</Label>
+                  <Label htmlFor="education">教育背景</Label>
                   <div className="relative">
                     <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      id="edu"
+                      id="education"
                       placeholder="例如：人文、商科、艺术设计等"
                       className="pl-9"
-                      value={edu}
-                      onChange={(e) => setEdu(e.target.value)}
+                      value={education}
+                      onChange={(e) => setEducation(e.target.value)}
                       required
                     />
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="goal">职业目标</Label>
+                  <Label htmlFor="careerGoal">职业目标</Label>
                   <div className="relative">
                     <TargetIcon className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                     <textarea
-                      id="goal"
+                      id="careerGoal"
                       placeholder="请简要描述你的职业目标（如：1 年内转型为 AI 产品经理）"
                       className="min-h-[80px] w-full rounded-md border border-input bg-background px-9 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      value={goal}
-                      onChange={(e) => setGoal(e.target.value)}
+                      value={careerGoal}
+                      onChange={(e) => setCareerGoal(e.target.value)}
                     />
                   </div>
                 </div>
