@@ -41,22 +41,7 @@ export default function Page() {
       })
 
       if (authError) {
-        // 检查是否是邮箱未确认的错误
-        if (authError.message === 'Email not confirmed') {
-          // 发送确认邮件
-          const { error: resendError } = await supabase.auth.resend({
-            type: 'signup',
-            email,
-          })
-          
-          if (resendError) {
-            throw resendError
-          } else {
-            throw new Error('邮箱未确认，我们已重新发送确认邮件，请查收并点击确认链接')
-          }
-        } else {
-          throw authError
-        }
+        throw authError
       }
 
       if (data.user) {
@@ -65,18 +50,28 @@ export default function Page() {
         if (!profile) throw new Error('无法获取用户资料')
         
         login({
-          id: data.user.id, // 存储用户ID
-          name: profile.full_name,
+          id: data.user.id,
+          name: profile.name || profile.full_name,
           email: data.user.email!,
           education: profile.education,
           careerGoal: profile.career_goal,
-          resumeUrl: profile.resume_url, // 存储简历URL
+          resumeUrl: profile.resume_url,
         })
         router.push("/dashboard")
       }
     } catch (err: any) {
       console.error("登录失败:", err)
-      setError(err.message || "登录失败，请检查邮箱和密码。")
+      let errorMessage = "登录失败，请检查邮箱和密码。"
+      
+      if (err.message?.includes('Invalid login credentials')) {
+        errorMessage = "邮箱或密码错误，请检查后重试。"
+      } else if (err.message?.includes('Email not confirmed')) {
+        errorMessage = "账户未激活，请联系管理员。"
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -118,17 +113,18 @@ export default function Page() {
     try {
       console.log('开始注册流程...', { email, name, education, careerGoal })
       
-      // 在注册时传递用户元数据，这样触发器可以使用这些数据创建 profile 记录
+      // 注册用户，不需要邮箱验证
       const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             full_name: name,
+            name: name,
             education: education,
             career_goal: careerGoal
           },
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          // 不设置 emailRedirectTo，避免邮箱验证流程
         }
       })
 
@@ -139,31 +135,51 @@ export default function Page() {
         throw authError
       }
 
-      // 检查是否需要邮箱确认
-      if (data.user && data.session === null) {
-        // 用户创建成功但需要邮箱确认
-        console.log('用户需要邮箱确认')
-        setError('注册成功！请查收邮箱并点击确认链接以完成注册。')
-        setIsLoading(false)
-        return
-      }
-
-      if (data.user && data.session) {
-        console.log('用户注册成功，会话已创建')
-        // 触发器 `handle_new_user` 会自动创建用户资料，
-        // 因此这里不再需要调用 `updateProfile`
-        login({
-          id: data.user.id,
-          name,
-          email: data.user.email!,
-          education,
-          careerGoal,
-          resumeUrl: null, // 新注册用户没有简历
-        })
-        router.push("/dashboard")
+      if (data.user) {
+        console.log('用户注册成功')
+        
+        // 等待一下让触发器执行完成
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        // 直接登录用户（如果Supabase配置为不需要邮箱验证）
+        if (data.session) {
+          console.log('用户已自动登录')
+          login({
+            id: data.user.id,
+            name,
+            email: data.user.email!,
+            education,
+            careerGoal,
+            resumeUrl: null,
+          })
+          router.push("/dashboard")
+        } else {
+          // 如果没有自动创建会话，手动登录
+          console.log('手动登录用户')
+          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          })
+          
+          if (loginError) {
+            throw new Error('注册成功但登录失败，请手动登录。')
+          }
+          
+          if (loginData.user) {
+            login({
+              id: loginData.user.id,
+              name,
+              email: loginData.user.email!,
+              education,
+              careerGoal,
+              resumeUrl: null,
+            })
+            router.push("/dashboard")
+          }
+        }
       } else {
         console.warn('注册响应异常:', data)
-        throw new Error('注册响应异常，请重试')
+        throw new Error('注册失败，请重试')
       }
     } catch (err: any) {
       console.error("注册失败:", err)
@@ -176,9 +192,11 @@ export default function Page() {
       } else if (err.message?.includes('Invalid email')) {
         errorMessage = "邮箱格式不正确，请检查后重试。"
       } else if (err.message?.includes('Password')) {
-        errorMessage = "密码不符合要求，请确保至少8位字符。"
+        errorMessage = "密码不符合要求，请确保至少6位字符。"
       } else if (err.message?.includes('network') || err.message?.includes('fetch')) {
         errorMessage = "网络连接错误，请检查网络后重试。"
+      } else if (err.message?.includes('signup is disabled')) {
+        errorMessage = "注册功能暂时关闭，请联系管理员。"
       } else if (err.message) {
         errorMessage = err.message
       }
