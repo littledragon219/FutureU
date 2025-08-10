@@ -114,7 +114,7 @@ export default function Page() {
       const supabase = getSupabaseClient() // 在函数内部获取客户端
       console.log('开始注册流程...', { email, name, education, careerGoal })
       
-      // 注册用户，不需要邮箱验证
+      // 注册用户，禁用邮箱验证
       const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -125,7 +125,8 @@ export default function Page() {
             education: education,
             career_goal: careerGoal
           },
-          // 不设置 emailRedirectTo，避免邮箱验证流程
+          // 明确禁用邮箱验证
+          emailRedirectTo: undefined,
         }
       })
 
@@ -137,46 +138,51 @@ export default function Page() {
       }
 
       if (data.user) {
-        console.log('用户注册成功')
+        console.log('用户注册成功，用户ID:', data.user.id)
         
-        // 等待一下让触发器执行完成
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        // 等待触发器执行完成
+        await new Promise(resolve => setTimeout(resolve, 1500))
         
-        // 直接登录用户（如果Supabase配置为不需要邮箱验证）
-        if (data.session) {
-          console.log('用户已自动登录')
+        // 无论是否有session，都尝试手动登录以确保用户可以立即使用
+        console.log('尝试自动登录用户')
+        const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+        
+        if (loginError) {
+          console.error('自动登录失败:', loginError)
+          // 如果登录失败，可能是因为邮箱未验证，给用户提示
+          if (loginError.message?.includes('Email not confirmed')) {
+            setError('注册成功！但需要验证邮箱后才能登录。请检查您的邮箱并点击验证链接，然后重新登录。')
+          } else {
+            setError('注册成功！请使用您的邮箱和密码登录。')
+          }
+          setMode("login") // 切换到登录模式
+          return
+        }
+        
+        if (loginData.user && loginData.session) {
+          console.log('用户成功登录')
+          // 获取用户资料
+          const profile = await profileService.getCurrentProfile()
+          
           login({
-            id: data.user.id,
-            name,
-            email: data.user.email!,
-            education,
-            careerGoal,
-            resumeUrl: null,
-          })
-          router.push("/dashboard")
-        } else {
-          // 如果没有自动创建会话，手动登录
-          console.log('手动登录用户')
-          const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
+            id: loginData.user.id,
+            name: profile?.name || profile?.full_name || name,
+            email: loginData.user.email!,
+            education: profile?.education || education,
+            careerGoal: profile?.career_goal || careerGoal,
+            resumeUrl: profile?.resume_url || null,
           })
           
-          if (loginError) {
-            throw new Error('注册成功但登录失败，请手动登录。')
-          }
-          
-          if (loginData.user) {
-            login({
-              id: loginData.user.id,
-              name,
-              email: loginData.user.email!,
-              education,
-              careerGoal,
-              resumeUrl: null,
-            })
+          setError('注册成功！正在跳转到控制面板...')
+          setTimeout(() => {
             router.push("/dashboard")
-          }
+          }, 1000)
+        } else {
+          setError('注册成功！请使用您的邮箱和密码登录。')
+          setMode("login")
         }
       } else {
         console.warn('注册响应异常:', data)
@@ -198,6 +204,9 @@ export default function Page() {
         errorMessage = "网络连接错误，请检查网络后重试。"
       } else if (err.message?.includes('signup is disabled')) {
         errorMessage = "注册功能暂时关闭，请联系管理员。"
+      } else if (err.message?.includes('Email not confirmed')) {
+        errorMessage = "注册成功！但需要验证邮箱后才能登录。请检查您的邮箱并点击验证链接。"
+        setMode("login") // 切换到登录模式
       } else if (err.message) {
         errorMessage = err.message
       }
