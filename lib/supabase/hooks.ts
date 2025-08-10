@@ -11,7 +11,6 @@ export function useProfile() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const { user } = useUserStore()
-  const supabase = getSupabaseClient()
 
   useEffect(() => {
     async function fetchProfile() {
@@ -19,6 +18,7 @@ export function useProfile() {
 
       try {
         setLoading(true)
+        const supabase = getSupabaseClient()
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
@@ -36,7 +36,7 @@ export function useProfile() {
     }
 
     fetchProfile()
-  }, [user?.id, supabase])
+  }, [user?.id])
 
   return { profile, loading, error }
 }
@@ -47,7 +47,6 @@ export function useResumeAnalysis() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const { user } = useUserStore()
-  const supabase = getSupabaseClient()
 
   useEffect(() => {
     async function fetchAnalysis() {
@@ -55,6 +54,7 @@ export function useResumeAnalysis() {
 
       try {
         setLoading(true)
+        const supabase = getSupabaseClient()
         const { data, error } = await supabase
           .from('resume_analysis')
           .select('*')
@@ -74,7 +74,7 @@ export function useResumeAnalysis() {
     }
 
     fetchAnalysis()
-  }, [user?.id, supabase])
+  }, [user?.id])
 
   return { analysis, loading, error }
 }
@@ -85,7 +85,6 @@ export function useProjectProgress(projectId?: string) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const { user } = useUserStore()
-  const supabase = getSupabaseClient()
 
   useEffect(() => {
     async function fetchProgress() {
@@ -93,6 +92,7 @@ export function useProjectProgress(projectId?: string) {
 
       try {
         setLoading(true)
+        const supabase = getSupabaseClient()
         const { data, error } = await supabase
           .from('project_progress')
           .select('*')
@@ -111,7 +111,7 @@ export function useProjectProgress(projectId?: string) {
     }
 
     fetchProgress()
-  }, [user?.id, projectId, supabase])
+  }, [user?.id, projectId])
 
   return { progress, loading, error }
 }
@@ -122,7 +122,6 @@ export function useJobRecommendations() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const { user } = useUserStore()
-  const supabase = getSupabaseClient()
 
   useEffect(() => {
     async function fetchRecommendations() {
@@ -130,6 +129,7 @@ export function useJobRecommendations() {
 
       try {
         setLoading(true)
+        const supabase = getSupabaseClient()
         const { data, error } = await supabase
           .from('job_recommendations')
           .select('*')
@@ -147,7 +147,7 @@ export function useJobRecommendations() {
     }
 
     fetchRecommendations()
-  }, [user?.id, supabase])
+  }, [user?.id])
 
   return { recommendations, loading, error }
 }
@@ -157,12 +157,12 @@ export function useCheckSession() {
   const router = useRouter()
   const { user, login, logout } = useUserStore()
   const [loading, setLoading] = useState(true)
-  const supabase = getSupabaseClient()
 
   useEffect(() => {
     const checkUserSession = async () => {
       try {
         setLoading(true)
+        const supabase = getSupabaseClient()
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error || !session) {
@@ -207,7 +207,8 @@ export function useCheckSession() {
     checkUserSession()
 
     // 监听认证状态变化
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const supabaseForListener = getSupabaseClient()
+    const { data: authListener } = supabaseForListener.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         logout()
         router.replace("/")
@@ -217,7 +218,7 @@ export function useCheckSession() {
     return () => {
       authListener.subscription.unsubscribe()
     }
-  }, [router, supabase, user, login, logout])
+  }, [router, user, login, logout])
 
   return { loading }
 }

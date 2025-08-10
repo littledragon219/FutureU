@@ -19,8 +19,6 @@ export default function Page() {
   const [loading, setIsLoading] = useState(false) // 独立管理加载状态
   const [error, setError] = useState<string | null>(null) // 错误信息
 
-  const supabase = getSupabaseClient() // 获取 Supabase 客户端实例
-
   // 登录表单
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -35,6 +33,7 @@ export default function Page() {
     setIsLoading(true)
     setError(null)
     try {
+      const supabase = getSupabaseClient() // 在函数内部获取客户端
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -51,11 +50,11 @@ export default function Page() {
         
         login({
           id: data.user.id,
-          name: profile.name || profile.full_name,
+          name: profile.name || profile.full_name || '',
           email: data.user.email!,
-          education: profile.education,
-          careerGoal: profile.career_goal,
-          resumeUrl: profile.resume_url,
+          education: profile.education || '',
+          careerGoal: profile.career_goal || '',
+          resumeUrl: profile.resume_url || null,
         })
         router.push("/dashboard")
       }
@@ -81,6 +80,7 @@ export default function Page() {
     setIsLoading(true)
     setError(null)
     try {
+      const supabase = getSupabaseClient() // 在函数内部获取客户端
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -111,6 +111,7 @@ export default function Page() {
     }
     
     try {
+      const supabase = getSupabaseClient() // 在函数内部获取客户端
       console.log('开始注册流程...', { email, name, education, careerGoal })
       
       // 注册用户，不需要邮箱验证
@@ -218,11 +219,11 @@ export default function Page() {
             // 用户已登录且有资料，设置用户状态并重定向
             login({
               id: profile.id,
-              name: profile.full_name || profile.name, // 使用 full_name 或 name
+              name: profile.full_name || profile.name || '', // 使用 full_name 或 name
               email: profile.email || '',
-              education: profile.education,
-              careerGoal: profile.career_goal,
-              resumeUrl: profile.resume_url,
+              education: profile.education || '',
+              careerGoal: profile.career_goal || '',
+              resumeUrl: profile.resume_url || null,
             });
             router.push('/dashboard');
           }

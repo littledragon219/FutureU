@@ -15,27 +15,41 @@ export default function UploadPage() {
   const [dragActive, setDragActive] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadedResumeUrl, setUploadedResumeUrl] = useState<string | null>(null)
+  const [isClient, setIsClient] = useState(false)
   const router = useRouter()
   const { user, login } = useUserStore()
-  const supabase = getSupabaseClient()
+  
+  // 确保只在客户端初始化
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
   
   useEffect(() => {
+    // 只在客户端执行
+    if (!isClient) return
+    
     // 检查用户会话
     const checkUserSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession()
-      if (error || !session) {
-        router.replace("/") // 未登录则重定向到登录页
-        return
-      }
-      
-      // 如果已经有上传的简历，显示URL
-      if (user?.resumeUrl) {
-        setUploadedResumeUrl(user.resumeUrl)
+      try {
+        const supabase = getSupabaseClient()
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error || !session) {
+          router.replace("/") // 未登录则重定向到登录页
+          return
+        }
+        
+        // 如果已经有上传的简历，显示URL
+        if (user?.resumeUrl) {
+          setUploadedResumeUrl(user.resumeUrl)
+        }
+      } catch (error) {
+        console.error("会话检查失败:", error)
+        router.replace("/")
       }
     }
     
     checkUserSession()
-  }, [router, supabase, user])
+  }, [router, user, isClient])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -84,6 +98,8 @@ export default function UploadPage() {
     const filePath = `${user!.id}/${Date.now()}.${fileExt}` // 存储路径：用户ID/时间戳.扩展名
 
     try {
+      const supabase = getSupabaseClient() // 在函数内部获取客户端
+      
       // 模拟上传进度
       let currentProgress = 0
       const interval = setInterval(() => {
@@ -161,6 +177,18 @@ export default function UploadPage() {
       default:
         return null
     }
+  }
+
+  // 如果还在客户端加载中，显示加载状态
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-[#7B68EE] mx-auto mb-4" />
+          <p className="text-gray-600">加载中...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
