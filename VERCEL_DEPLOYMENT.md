@@ -15,9 +15,27 @@
 在Vercel项目设置中添加以下环境变量：
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=你的Supabase项目URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY=你的Supabase匿名密钥
+NEXT_PUBLIC_SUPABASE_URL=https://jxsewcsxhiycofydtxhi.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4c2V3Y3N4aGl5Y29meWR0eGhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzOTQ2NDcsImV4cCI6MjA2OTk3MDY0N30.yZmvdpVY3HkcHo0AANySLpUgyNsl0M6PUnEYnprJrcs
 ```
+
+**具体操作步骤：**
+1. 登录 [Vercel Dashboard](https://vercel.com/dashboard)
+2. 找到你的 FutureU 项目并点击进入
+3. 点击 **Settings** 标签
+4. 在左侧菜单中选择 **Environment Variables**
+5. 点击 **Add New** 按钮
+6. 添加第一个变量：
+   - **Name**: `NEXT_PUBLIC_SUPABASE_URL`
+   - **Value**: `https://jxsewcsxhiycofydtxhi.supabase.co`
+   - **Environment**: 选择 `Production`, `Preview`, `Development` (全选)
+7. 点击 **Save** 保存
+8. 重复步骤6-7，添加第二个变量：
+   - **Name**: `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - **Value**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp4c2V3Y3N4aGl5Y29meWR0eGhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzOTQ2NDcsImV4cCI6MjA2OTk3MDY0N30.yZmvdpVY3HkcHo0AANySLpUgyNsl0M6PUnEYnprJrcs`
+   - **Environment**: 选择 `Production`, `Preview`, `Development` (全选)
+9. 配置完成后，点击 **Deployments** 标签
+10. 点击最新部署右侧的三个点，选择 **Redeploy** 重新部署
 
 ### 第二步：Supabase配置（重要！）
 
