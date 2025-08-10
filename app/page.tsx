@@ -107,7 +107,17 @@ export default function Page() {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    
+    // 添加环境变量检查
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      setError('应用配置错误：缺少 Supabase 环境变量。请联系管理员。')
+      setIsLoading(false)
+      return
+    }
+    
     try {
+      console.log('开始注册流程...', { email, name, education, careerGoal })
+      
       // 在注册时传递用户元数据，这样触发器可以使用这些数据创建 profile 记录
       const { data, error: authError } = await supabase.auth.signUp({
         email,
@@ -122,17 +132,24 @@ export default function Page() {
         }
       })
 
-      if (authError) throw authError
+      console.log('注册响应:', { data, authError })
+
+      if (authError) {
+        console.error('注册错误:', authError)
+        throw authError
+      }
 
       // 检查是否需要邮箱确认
       if (data.user && data.session === null) {
         // 用户创建成功但需要邮箱确认
+        console.log('用户需要邮箱确认')
         setError('注册成功！请查收邮箱并点击确认链接以完成注册。')
         setIsLoading(false)
         return
       }
 
-      if (data.user) {
+      if (data.user && data.session) {
+        console.log('用户注册成功，会话已创建')
         // 触发器 `handle_new_user` 会自动创建用户资料，
         // 因此这里不再需要调用 `updateProfile`
         login({
@@ -144,10 +161,29 @@ export default function Page() {
           resumeUrl: null, // 新注册用户没有简历
         })
         router.push("/dashboard")
+      } else {
+        console.warn('注册响应异常:', data)
+        throw new Error('注册响应异常，请重试')
       }
     } catch (err: any) {
       console.error("注册失败:", err)
-      setError(err.message || "注册失败，请重试。")
+      
+      // 提供更详细的错误信息
+      let errorMessage = "注册失败，请重试。"
+      
+      if (err.message?.includes('User already registered')) {
+        errorMessage = "该邮箱已被注册，请使用其他邮箱或尝试登录。"
+      } else if (err.message?.includes('Invalid email')) {
+        errorMessage = "邮箱格式不正确，请检查后重试。"
+      } else if (err.message?.includes('Password')) {
+        errorMessage = "密码不符合要求，请确保至少8位字符。"
+      } else if (err.message?.includes('network') || err.message?.includes('fetch')) {
+        errorMessage = "网络连接错误，请检查网络后重试。"
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }
