@@ -13,10 +13,10 @@
 1. 在项目根目录创建或编辑 `.env.local` 文件
 2. 添加以下环境变量：
 
-```
+\`\`\`
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-url.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-```
+\`\`\`
 
 ## 数据库设置
 
